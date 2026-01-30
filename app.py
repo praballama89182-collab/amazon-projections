@@ -68,8 +68,8 @@ if ads_file and biz_file:
     biz_df['Brand'] = biz_df[biz_title_col].apply(identify_brand_from_title) if biz_title_col else "Unmapped"
 
     current_metrics = []
-    comparison_data = []
-
+    
+    # Study current month and project next
     for prefix, full_name in BRAND_MAP.items():
         b_ads = ads_df[ads_df['Brand'] == full_name]
         b_biz_sales = biz_df[biz_df['Brand'] == full_name][biz_sales_col].sum() if biz_sales_col else 0
@@ -79,28 +79,22 @@ if ads_file and biz_file:
         clicks = b_ads['Clicks'].sum()
         imps = b_ads['Impressions'].sum()
         
-        # Current Stats
+        # Current Ratios
         curr_roas = ad_sales / spend if spend > 0 else 0
         curr_org_pct = (b_biz_sales - ad_sales) / b_biz_sales if b_biz_sales > 0 else 0
         curr_cpc = spend / clicks if clicks > 0 else 0
         curr_ctr = clicks / imps if imps > 0 else 0
         
-        # Growth Logic: +20% ROAS, +5% Organic Ratio
+        # IMPROVEMENT LOGIC: +20% ROAS, +5% Organic
         target_roas = curr_roas * 1.20
         target_ad_rev = spend * target_roas
         target_org_pct = min(0.95, curr_org_pct + 0.05)
-        target_paid_pct = 1 - target_org_pct
-        
-        target_total_rev = target_ad_rev / target_paid_pct if target_paid_pct > 0 else target_ad_rev
+        target_total_rev = target_ad_rev / (1 - target_org_pct) if target_org_pct < 1 else target_ad_rev
         target_org_rev = target_total_rev - target_ad_rev
         
-        # Traffic Projections
+        # Projections
         target_clicks = spend / curr_cpc if curr_cpc > 0 else 0
         target_imps = target_clicks / curr_ctr if curr_ctr > 0 else 0
-        
-        # T-Metrics
-        t_roas = target_total_rev / spend if spend > 0 else 0
-        t_acos = (spend / target_total_rev) if target_total_rev > 0 else 0
 
         current_metrics.append({
             'Brand': full_name,
@@ -109,37 +103,57 @@ if ads_file and biz_file:
             'Spends': spend,
             'ROAS': round(target_roas, 2),
             'Ad Revenue': round(target_ad_rev, 2),
-            'Organic (%)': f"{target_org_pct:.0%}",
-            'Paid (%)': f"{target_paid_pct:.0%}",
+            'Organic (%)': target_org_pct,
+            'Paid (%)': 1 - target_org_pct,
             'Organic Revenue': round(target_org_rev, 2),
             'Overall Revenue': round(target_total_rev, 2),
-            'T-ROAS': round(t_roas, 2),
-            'T-ACOS': f"{t_acos:.1%}"
-        })
-
-        # Comparison Logic
-        comparison_data.append({
-            'Brand': full_name,
-            'Metric': 'Revenue',
-            'Current': round(b_biz_sales, 2),
-            'Projected': round(target_total_rev, 2),
-            'Growth %': f"{((target_total_rev/b_biz_sales)-1):.1%}" if b_biz_sales > 0 else "0%"
+            'T-ROAS': round(target_total_rev / spend, 2) if spend > 0 else 0,
+            'T-ACOS': (spend / target_total_rev) if target_total_rev > 0 else 0
         })
 
     proj_df = pd.DataFrame(current_metrics)
+
+    # CALCULATE GLOBAL TOTALS (The Combined Overview)
+    total_spends = proj_df['Spends'].sum()
+    total_ad_rev = proj_df['Ad Revenue'].sum()
+    total_overall_rev = proj_df['Overall Revenue'].sum()
+    total_org_rev = proj_df['Organic Revenue'].sum()
     
-    # 1. Comparison View
-    st.subheader("Current vs. Projected Revenue")
-    st.table(pd.DataFrame(comparison_data))
+    global_total = {
+        'Brand': '🌎 TOTAL PORTFOLIO',
+        'Imp': int(proj_df['Imp'].sum()),
+        'Clicks': int(proj_df['Clicks'].sum()),
+        'Spends': total_spends,
+        'ROAS': round(total_ad_rev / total_spends, 2) if total_spends > 0 else 0,
+        'Ad Revenue': total_ad_rev,
+        'Organic (%)': total_org_rev / total_overall_rev if total_overall_rev > 0 else 0,
+        'Paid (%)': total_ad_rev / total_overall_rev if total_overall_rev > 0 else 0,
+        'Organic Revenue': total_org_rev,
+        'Overall Revenue': total_overall_rev,
+        'T-ROAS': round(total_overall_rev / total_spends, 2) if total_spends > 0 else 0,
+        'T-ACOS': (total_spends / total_overall_rev) if total_overall_rev > 0 else 0
+    }
+    
+    # Formatting for display
+    def format_df(df):
+        styled = df.copy()
+        styled['Organic (%)'] = styled['Organic (%)'].apply(lambda x: f"{x:.0%}")
+        styled['Paid (%)'] = styled['Paid (%)'].apply(lambda x: f"{x:.0%}")
+        styled['T-ACOS'] = styled['T-ACOS'].apply(lambda x: f"{x:.1%}")
+        return styled
 
-    # 2. Main Monthly Table
+    # 1. Display Overview Section
+    st.subheader("🌍 1. Combined Portfolio Overview")
+    st.table(format_df(pd.DataFrame([global_total])))
+    
     st.divider()
-    st.subheader("Full Monthly Target Overview")
-    st.table(proj_df)
+    
+    st.subheader("🏢 2. Brand-Wise Performance Summary")
+    st.table(format_df(proj_df))
 
-    # 3. Weekly Projections (30/20/20/20/10 Split)
+    # 2. Weekly Projections
     st.divider()
-    selected_brand = st.selectbox("Select Brand for Weekly Breakdown:", options=proj_df['Brand'].unique())
+    selected_brand = st.selectbox("Select Brand for Weekly Breakdown (30/20/20/20/10):", options=proj_df['Brand'].unique())
     
     brand_row = proj_df[proj_df['Brand'] == selected_brand].iloc[0]
     weights = [0.30, 0.20, 0.20, 0.20, 0.10]
@@ -155,22 +169,23 @@ if ads_file and biz_file:
             "Spends": brand_row['Spends'] * weight,
             "ROAS": brand_row['ROAS'],
             "Ad Revenue": brand_row['Ad Revenue'] * weight,
-            "Organic (%)": brand_row['Organic (%)'],
-            "Paid (%)": brand_row['Paid (%)'],
+            "Organic (%)": f"{brand_row['Organic (%)']:.0%}",
+            "Paid (%)": f"{(1-brand_row['Organic (%)']):.0%}",
             "Organic Revenue": brand_row['Organic Revenue'] * weight,
             "Overall Revenue": brand_row['Overall Revenue'] * weight,
             "T-ROAS": brand_row['T-ROAS'],
-            "T-ACOS": brand_row['T-ACOS']
+            "T-ACOS": f"{(brand_row['Spends']/brand_row['Overall Revenue']):.1%}"
         })
     
     st.write(f"### {selected_brand} - Weekly Targets")
+    
     st.table(pd.DataFrame(weekly_rows))
 
-    # 4. Export
+    # 3. Export
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         proj_df.to_excel(writer, sheet_name='Monthly_Targets', index=False)
-        pd.DataFrame(comparison_data).to_excel(writer, sheet_name='Growth_Comparison', index=False)
+        pd.DataFrame([global_total]).to_excel(writer, sheet_name='Combined_Overview', index=False)
     st.download_button("📥 Download Master Multi-Tab Report", data=output.getvalue(), file_name="Amazon_Growth_Projections.xlsx", use_container_width=True)
 
 else:
