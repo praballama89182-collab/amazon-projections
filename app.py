@@ -96,26 +96,30 @@ if ads_file and biz_file:
         target_clicks = spend / curr_cpc if curr_cpc > 0 else 0
         target_imps = target_clicks / curr_ctr if curr_ctr > 0 else 0
         
+        # T-Metrics
+        t_roas = target_total_rev / spend if spend > 0 else 0
+        t_acos = (spend / target_total_rev) if target_total_rev > 0 else 0
+
         current_metrics.append({
             'Brand': full_name,
             'Imp': int(target_imps),
             'Clicks': int(target_clicks),
-            'Spends (in ₹)': spend,
+            'Spends': spend,
             'ROAS': round(target_roas, 2),
-            'Ad Revenue (in ₹)': round(target_ad_rev, 2),
+            'Ad Revenue': round(target_ad_rev, 2),
             'Organic (%)': f"{target_org_pct:.0%}",
             'Paid (%)': f"{target_paid_pct:.0%}",
-            'Organic Revenue (in ₹)': round(target_org_rev, 2),
-            'Overall Revenue (in ₹)': round(target_total_rev, 2),
-            'T-ROAS': round(target_total_rev / spend, 2) if spend > 0 else 0,
-            'T-ACOS': f"{(spend / target_total_rev):.1%}" if target_total_rev > 0 else "0%"
+            'Organic Revenue': round(target_org_rev, 2),
+            'Overall Revenue': round(target_total_rev, 2),
+            'T-ROAS': round(t_roas, 2),
+            'T-ACOS': f"{t_acos:.1%}"
         })
 
     proj_df = pd.DataFrame(current_metrics)
     st.subheader("Monthly Target Overview")
     st.table(proj_df)
 
-    # 2. Weekly Projections (30/20/20/20/10 Split - Weight Column Hidden)
+    # 2. Weekly Projections (30/20/20/20/10 Split)
     st.divider()
     selected_brand = st.selectbox("Select Brand for Weekly Breakdown:", options=proj_df['Brand'].unique())
     
@@ -125,15 +129,24 @@ if ads_file and biz_file:
     weekly_rows = []
     for i, weight in enumerate(weights):
         w_num = i + 1
+        # Extract numeric T-ACOS/ROAS for weekly table consistency
+        total_rev_w = brand_row['Overall Revenue'] * weight
+        spend_w = brand_row['Spends'] * weight
+        
         weekly_rows.append({
             "Sr. No": w_num,
             "Week": f"Week {w_num}",
             "Imp": int(brand_row['Imp'] * weight),
             "Clicks": int(brand_row['Clicks'] * weight),
-            "Spends": brand_row['Spends (in ₹)'] * weight,
-            "Ad Revenue": brand_row['Ad Revenue (in ₹)'] * weight,
-            "Organic Revenue": brand_row['Organic Revenue (in ₹)'] * weight,
-            "Overall Revenue": brand_row['Overall Revenue (in ₹)'] * weight
+            "Spends": spend_w,
+            "ROAS": brand_row['ROAS'], # Efficiency remains same
+            "Ad Revenue": brand_row['Ad Revenue'] * weight,
+            "Organic (%)": brand_row['Organic (%)'],
+            "Paid (%)": brand_row['Paid (%)'],
+            "Organic Revenue": brand_row['Organic Revenue'] * weight,
+            "Overall Revenue": total_rev_w,
+            "T-ROAS": brand_row['T-ROAS'],
+            "T-ACOS": brand_row['T-ACOS']
         })
     
     st.write(f"### {selected_brand} - Weekly Targets")
