@@ -92,13 +92,13 @@ if ads_file and biz_file:
         target_total_rev = target_ad_rev / target_paid_pct if target_paid_pct > 0 else target_ad_rev
         target_org_rev = target_total_rev - target_ad_rev
         
-        # Traffic Projections (Impressions and Clicks Added)
+        # Traffic Projections
         target_clicks = spend / curr_cpc if curr_cpc > 0 else 0
         target_imps = target_clicks / curr_ctr if curr_ctr > 0 else 0
         
         current_metrics.append({
             'Brand': full_name,
-            'Impressions': int(target_imps),
+            'Imp': int(target_imps),
             'Clicks': int(target_clicks),
             'Spends (in ₹)': spend,
             'ROAS': round(target_roas, 2),
@@ -112,15 +112,14 @@ if ads_file and biz_file:
         })
 
     proj_df = pd.DataFrame(current_metrics)
-    st.subheader("Target Projections - Monthly Overview (Includes Clicks & Imps)")
+    st.subheader("Monthly Target Overview")
     st.table(proj_df)
 
-    # 2. Updated Weekly Projections (30/20/20/20/10 Split)
+    # 2. Weekly Projections (30/20/20/20/10 Split - Weight Column Hidden)
     st.divider()
-    selected_brand = st.selectbox("Weekly Breakdown for:", options=proj_df['Brand'].unique())
+    selected_brand = st.selectbox("Select Brand for Weekly Breakdown:", options=proj_df['Brand'].unique())
     
     brand_row = proj_df[proj_df['Brand'] == selected_brand].iloc[0]
-    # Week 1 (30%), Weeks 2-4 (20%), Week 5 (10%)
     weights = [0.30, 0.20, 0.20, 0.20, 0.10]
     
     weekly_rows = []
@@ -129,8 +128,7 @@ if ads_file and biz_file:
         weekly_rows.append({
             "Sr. No": w_num,
             "Week": f"Week {w_num}",
-            "Weight": f"{weight:.0%}",
-            "Impressions": int(brand_row['Impressions'] * weight),
+            "Imp": int(brand_row['Imp'] * weight),
             "Clicks": int(brand_row['Clicks'] * weight),
             "Spends": brand_row['Spends (in ₹)'] * weight,
             "Ad Revenue": brand_row['Ad Revenue (in ₹)'] * weight,
@@ -138,7 +136,7 @@ if ads_file and biz_file:
             "Overall Revenue": brand_row['Overall Revenue (in ₹)'] * weight
         })
     
-    st.write(f"### {selected_brand} - Weighted Weekly Targets")
+    st.write(f"### {selected_brand} - Weekly Targets")
     
     st.table(pd.DataFrame(weekly_rows))
 
