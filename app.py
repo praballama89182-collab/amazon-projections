@@ -47,12 +47,10 @@ def get_brand_from_campaign(campaign_name):
 
 def format_styled_df(df):
     styled = df.copy()
-    if 'Organic (%)' in styled.columns:
-        styled['Organic (%)'] = styled['Organic (%)'].apply(lambda x: f"{x:.0%}" if isinstance(x, (int, float)) else x)
-    if 'Paid (%)' in styled.columns:
-        styled['Paid (%)'] = styled['Paid (%)'].apply(lambda x: f"{x:.0%}" if isinstance(x, (int, float)) else x)
-    if 'T-ACOS' in styled.columns:
-        styled['T-ACOS'] = styled['T-ACOS'].apply(lambda x: f"{x:.1%}" if isinstance(x, (int, float)) else x)
+    cols_to_pct = ['Organic (%)', 'Paid (%)', 'T-ACOS']
+    for col in cols_to_pct:
+        if col in styled.columns:
+            styled[col] = styled[col].apply(lambda x: f"{x:.0%}" if isinstance(x, (int, float)) else x)
     return styled
 
 st.title("📊 Amazon Master Projections")
@@ -91,8 +89,7 @@ if ads_file and biz_file:
         
         c_roas = ad_sales / spend if spend > 0 else 0
         c_org_pct = (b_biz_sales - ad_sales) / b_biz_sales if b_biz_sales > 0 else 0
-        c_cpc = spend / clicks if clicks > 0 else 0
-        c_ctr = clicks / imps if imps > 0 else 0
+        c_cpc, c_ctr = spend / clicks if clicks > 0 else 0, clicks / imps if imps > 0 else 0
         
         t_roas = c_roas * (1 + roas_uplift)
         t_ad_rev = spend * t_roas
@@ -111,7 +108,7 @@ if ads_file and biz_file:
 
     proj_df = pd.DataFrame(brand_metrics)
     
-    # Platform Total Calculation
+    # Combined Platform Overview
     ts, tar, tor, tr = proj_df['Spends'].sum(), proj_df['Ad Revenue'].sum(), proj_df['Overall Revenue'].sum(), proj_df['Organic Revenue'].sum()
     platform_total = pd.DataFrame([{
         'Brand': 'TOTAL AMAZON PLATFORM', 'Imp': int(proj_df['Imp'].sum()), 'Clicks': int(proj_df['Clicks'].sum()),
@@ -125,45 +122,44 @@ if ads_file and biz_file:
     with tabs[0]:
         st.markdown("### 🏆 Combined Amazon Platform Projections")
         st.table(format_styled_df(platform_total))
-        st.write("") # Spacing
         st.divider()
         st.markdown("### 🏢 Brand-Wise Summary")
         st.table(format_styled_df(proj_df))
 
-    weights = [0.30, 0.20, 0.20, 0.20, 0.10] # 30/20/20/20/10
-    all_weekly_data = []
-
-    for i, brand in enumerate(unique_brands):
-        with tabs[i+1]:
-            st.subheader(f"📊 {brand} Projections")
-            b_row = proj_df[proj_df['Brand'] == brand].iloc[0]
-            st.table(format_styled_df(pd.DataFrame([b_row])))
-            st.divider()
-            st.markdown("#### 📅 Weekly Segregation")
-            weekly_rows = []
-            for w, wt in enumerate(weights):
-                weekly_rows.append({
-                    "Brand": brand, "Week": f"Week {w+1}", "Imp": int(b_row['Imp']*wt), "Clicks": int(b_row['Clicks']*wt),
-                    "Spends": b_row['Spends']*wt, "ROAS": b_row['ROAS'], "Ad Revenue": b_row['Ad Revenue']*wt,
-                    "Organic (%)": f"{b_row['Organic (%)']:.0%}", "Paid (%)": f"{(1-b_row['Organic (%)']):.0%}",
-                    "Organic Revenue": b_row['Organic Revenue']*wt, "Overall Revenue": b_row['Overall Revenue']*wt,
-                    "T-ROAS": b_row['T-ROAS'], "T-ACOS": f"{(b_row['Spends']/b_row['Overall Revenue']):.1%}"
-                })
-            weekly_df = pd.DataFrame(weekly_rows)
-            st.table(weekly_df.drop(columns=['Brand']))
-            all_weekly_data.append(weekly_df)
-
-    # --- ENHANCED EXCEL EXPORT ---
+    weights = [0.30, 0.20, 0.20, 0.20, 0.10]
+    
+    # Prepare Excel Export Object
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Sheet 1: Combined Platform
         format_styled_df(platform_total).to_excel(writer, sheet_name='Combined_Overview', index=False)
-        format_styled_df(proj_df).to_excel(writer, sheet_name='Brand_Total_Summary', index=False)
-        if all_weekly_data:
-            pd.concat(all_weekly_data).to_excel(writer, sheet_name='Weekly_Overview', index=False)
+        format_styled_df(proj_df).to_excel(writer, sheet_name='Combined_Overview', startrow=5, index=False)
+
         for i, brand in enumerate(unique_brands):
-            format_styled_df(pd.DataFrame([proj_df[proj_df['Brand'] == brand].iloc[0]])).to_excel(writer, sheet_name=brand[:31], index=False)
+            with tabs[i+1]:
+                st.subheader(f"📊 {brand} Projections")
+                b_row = proj_df[proj_df['Brand'] == brand].iloc[0]
+                b_df = format_styled_df(pd.DataFrame([b_row]))
+                st.table(b_df)
+                
+                st.divider()
+                st.markdown("#### 📅 Weekly Segregation")
+                weekly_rows = []
+                for w, wt in enumerate(weights):
+                    weekly_rows.append({
+                        "Week": f"Week {w+1}", "Imp": int(b_row['Imp']*wt), "Clicks": int(b_row['Clicks']*wt),
+                        "Spends": b_row['Spends']*wt, "ROAS": b_row['ROAS'], "Ad Revenue": b_row['Ad Revenue']*wt,
+                        "Organic Revenue": b_row['Organic Revenue']*wt, "Overall Revenue": b_row['Overall Revenue']*wt,
+                        "T-ROAS": b_row['T-ROAS'], "T-ACOS": f"{(b_row['Spends']/b_row['Overall Revenue']):.1%}"
+                    })
+                weekly_df = pd.DataFrame(weekly_rows)
+                st.table(weekly_df)
+                
+                # Excel: One sheet per brand with Monthly on top, Weekly below
+                b_df.to_excel(writer, sheet_name=brand[:31], index=False)
+                weekly_df.to_excel(writer, sheet_name=brand[:31], startrow=4, index=False)
 
     st.sidebar.divider()
     st.sidebar.download_button("📥 Download Master Multi-Tab Report", data=output.getvalue(), file_name="Amazon_Platform_Master_Report.xlsx", use_container_width=True)
 else:
-    st.info("Please upload Ads and Business reports to generate projections.")
+    st.info("Upload Ads and Business reports to generate the dashboard.")
