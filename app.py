@@ -68,6 +68,8 @@ if ads_file and biz_file:
     biz_df['Brand'] = biz_df[biz_title_col].apply(identify_brand_from_title) if biz_title_col else "Unmapped"
 
     current_metrics = []
+    comparison_data = []
+
     for prefix, full_name in BRAND_MAP.items():
         b_ads = ads_df[ads_df['Brand'] == full_name]
         b_biz_sales = biz_df[biz_df['Brand'] == full_name][biz_sales_col].sum() if biz_sales_col else 0
@@ -115,11 +117,27 @@ if ads_file and biz_file:
             'T-ACOS': f"{t_acos:.1%}"
         })
 
+        # Comparison Logic
+        comparison_data.append({
+            'Brand': full_name,
+            'Metric': 'Revenue',
+            'Current': round(b_biz_sales, 2),
+            'Projected': round(target_total_rev, 2),
+            'Growth %': f"{((target_total_rev/b_biz_sales)-1):.1%}" if b_biz_sales > 0 else "0%"
+        })
+
     proj_df = pd.DataFrame(current_metrics)
-    st.subheader("Monthly Target Overview")
+    
+    # 1. Comparison View
+    st.subheader("Current vs. Projected Revenue")
+    st.table(pd.DataFrame(comparison_data))
+
+    # 2. Main Monthly Table
+    st.divider()
+    st.subheader("Full Monthly Target Overview")
     st.table(proj_df)
 
-    # 2. Weekly Projections (30/20/20/20/10 Split)
+    # 3. Weekly Projections (30/20/20/20/10 Split)
     st.divider()
     selected_brand = st.selectbox("Select Brand for Weekly Breakdown:", options=proj_df['Brand'].unique())
     
@@ -129,39 +147,30 @@ if ads_file and biz_file:
     weekly_rows = []
     for i, weight in enumerate(weights):
         w_num = i + 1
-        # Extract numeric T-ACOS/ROAS for weekly table consistency
-        total_rev_w = brand_row['Overall Revenue'] * weight
-        spend_w = brand_row['Spends'] * weight
-        
         weekly_rows.append({
             "Sr. No": w_num,
             "Week": f"Week {w_num}",
             "Imp": int(brand_row['Imp'] * weight),
             "Clicks": int(brand_row['Clicks'] * weight),
-            "Spends": spend_w,
-            "ROAS": brand_row['ROAS'], # Efficiency remains same
+            "Spends": brand_row['Spends'] * weight,
+            "ROAS": brand_row['ROAS'],
             "Ad Revenue": brand_row['Ad Revenue'] * weight,
             "Organic (%)": brand_row['Organic (%)'],
             "Paid (%)": brand_row['Paid (%)'],
             "Organic Revenue": brand_row['Organic Revenue'] * weight,
-            "Overall Revenue": total_rev_w,
+            "Overall Revenue": brand_row['Overall Revenue'] * weight,
             "T-ROAS": brand_row['T-ROAS'],
             "T-ACOS": brand_row['T-ACOS']
         })
     
     st.write(f"### {selected_brand} - Weekly Targets")
-    
     st.table(pd.DataFrame(weekly_rows))
 
-    # 3. Export
+    # 4. Export
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         proj_df.to_excel(writer, sheet_name='Monthly_Targets', index=False)
-        for b in BRAND_MAP.values():
-            brand_row_data = proj_df[proj_df['Brand'] == b]
-            if not brand_row_data.empty:
-                brand_row_data.to_excel(writer, sheet_name=b[:31], index=False)
-                
+        pd.DataFrame(comparison_data).to_excel(writer, sheet_name='Growth_Comparison', index=False)
     st.download_button("📥 Download Master Multi-Tab Report", data=output.getvalue(), file_name="Amazon_Growth_Projections.xlsx", use_container_width=True)
 
 else:
